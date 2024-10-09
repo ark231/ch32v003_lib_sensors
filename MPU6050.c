@@ -13,8 +13,8 @@
 #define REG_PWR_MGMT_1   0x6b
 
 // NOLINTBEGIN(readability-identifier-naming) : private member function
-Vec3i16 mpu6050_read_accel_i16_(MPU6050 *self);
-Vec3i16 mpu6050_read_gyro_i16_(MPU6050 *self);
+Vec3i16 mpu6050_read_accel_i16_(MPU6050 *self, uint8_t *buf);
+Vec3i16 mpu6050_read_gyro_i16_(MPU6050 *self, uint8_t *buf);
 // NOLINTEND(readability-identifier-naming) : private member function
 // NOLINTNEXTLINE(readability-identifier-naming) : this function returns constant values, like dynamic #define
 float mpu6050_LSB_PER_DPS(MPU6050_GyroRange gyro_range) {
@@ -58,10 +58,8 @@ sensor_error_t mpu6050_init(MPU6050 *self, const MPU6050_AccelRange accel_range,
     i2c_err_t res     = I2C_OK;
     res += i2c_write_byte(self->addr, REG_GYRO_CONFIG, self->gyro_range << 3);
     res += i2c_write_byte(self->addr, REG_ACCEL_CONFIG, self->accel_range << 3);
-    res += i2c_write_byte(self->addr, REG_CONFIG,
-                          0x00);  // FSYNC: disabled, DLPF: disabled
-    res += i2c_write_byte(self->addr, REG_PWR_MGMT_1,
-                          0x00);  // SLEEP: disabled <- デフォルトではenabled
+    res += i2c_write_byte(self->addr, REG_CONFIG, 0x00);      // FSYNC: disabled, DLPF: disabled
+    res += i2c_write_byte(self->addr, REG_PWR_MGMT_1, 0x00);  // SLEEP: disabled <- デフォルトではenabled
     return res == I2C_OK ? SENSOR_OK : SENSOR_I2C_ERROR;
 }
 
@@ -69,15 +67,15 @@ MPU6050_DataF mpu6050_readf(MPU6050 *self) { return mpu6050_compensate(self, mpu
 
 MPU6050_DataI16 mpu6050_readi16(MPU6050 *self) {
     MPU6050_DataI16 result;
-    result.accel = mpu6050_read_accel_i16_(self);
-    result.gyro  = mpu6050_read_gyro_i16_(self);
+    uint8_t buf[2 * (3 + 1 + 3)];  // accel,temp,gyro
+    i2c_read(self->addr, REG_ACCEL_XOUT_H, buf, sizeof(buf));
+    result.accel = mpu6050_read_accel_i16_(self, buf);
+    result.gyro  = mpu6050_read_gyro_i16_(self, buf + (2 * (3 + 1)));
     return result;
 }
 
-Vec3i16 mpu6050_read_accel_i16_(MPU6050 *self) {
+Vec3i16 mpu6050_read_accel_i16_(MPU6050 *self, uint8_t *buf) {
     int16_t ax16, ay16, az16;
-    uint8_t buf[6];
-    i2c_read(self->addr, REG_ACCEL_XOUT_H, buf, 6);
     ax16 = read_16_from_bytes(buf, ENDIAN_BIG);
     ay16 = read_16_from_bytes(buf + 2, ENDIAN_BIG);
     az16 = read_16_from_bytes(buf + 4, ENDIAN_BIG);
@@ -85,10 +83,8 @@ Vec3i16 mpu6050_read_accel_i16_(MPU6050 *self) {
     Vec3i16 result = {.x = ax16, .y = ay16, .z = az16};
     return result;
 }
-Vec3i16 mpu6050_read_gyro_i16_(MPU6050 *self) {
+Vec3i16 mpu6050_read_gyro_i16_(MPU6050 *self, uint8_t *buf) {
     int16_t gx16, gy16, gz16;
-    uint8_t buf[6];
-    i2c_read(self->addr, REG_GYRO_XOUT_H, buf, 6);
     gx16           = read_16_from_bytes(buf, ENDIAN_BIG);
     gy16           = read_16_from_bytes(buf + 2, ENDIAN_BIG);
     gz16           = read_16_from_bytes(buf + 4, ENDIAN_BIG);
